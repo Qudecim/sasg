@@ -1,0 +1,249 @@
+<html>
+    <head>
+        <script src="http://code.jquery.com/jquery-1.8.3.js"></script>
+        <script src="https://cdn.socket.io/socket.io-1.7.0.js"></script>
+        <title>Map</title>
+    </head>
+    <body>
+        <style>
+            body { margin:0; padding: 0;}
+            canvas { background: #222; width: 100%; height: 100%; }
+            .container { display: flex; position: absolute; align-items: center; margin: 10px; color:#ddd; }
+            #objSelect {width: 100px; height: 20px;}
+            .button1 {padding: 10px; background-color: #444; margin: 5px;}
+            .objSelect{ display: flex; background-color: #2c2c54; align-items: center; padding: 0px 5px; margin-right: 10px;}
+        </style>
+        <div class="container">
+            <div class="objSelect">
+                <p>Объект:</p>
+                <select id='objSelect'>
+                    <option>tree</option>
+                    <option>stone</option>
+                    <option>bush</option>
+                </select>
+            </div>
+            <div class="objSelect"><input id="inputLoad" type="text" size="20"><div class="button1" id="eraserButton" onclick="load();">Загрузить</div></div>
+            <div class="button1" onclick="generationMap();">Сгенерировать</div>
+            <div class="button1" onclick="map = [];">Очистить</div>
+            <div class="button1" id="eraserButton" onclick="eraserFunct();">Ластик</div>
+            <div class="button1" onclick="console.log(JSON.stringify(map));">Выгрузить</div>
+        </div>
+           
+        <canvas id="myCanvas"></canvas>
+<script>
+var canvas = document.getElementById("myCanvas");
+var ctx = canvas.getContext("2d");
+    
+var socket = io();  
+    
+var game = false;
+var mapSize = 3000;
+var eraser = false;
+var eraserSize = 50;
+                    
+var keyDownArr = {rightPressed:false,leftPressed:false,upPressed:false,downPressed:false};        
+        
+var angle=0;               
+var speedBullet = 50000;
+
+var mouseX = 0;
+var mouseY = 0;
+
+var canvasPositionX = 0;                    
+var canvasPositionY = 0;                    
+
+var mapJson = '[]';
+                    
+var map = JSON.parse(mapJson);           
+//var map = [];           
+
+var imgFon = new Image();
+imgFon.src = "/img/fon.png"; 
+                            
+var imgTree = new Image();
+imgTree.src = "/img/tree.png"; 
+                    
+var imgStone = new Image();
+imgStone.src = "/img/stone.png";
+    
+var imgBush = new Image();
+imgBush.src = "/img/bush.png";
+
+var players = {};
+
+document.addEventListener("keydown", keyDownHandler, false);
+document.addEventListener("keyup", keyUpHandler, false);
+
+    
+window.addEventListener('resize', resizeCanvas, false);
+function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+    }
+resizeCanvas();
+                    
+function keyDownHandler(e) {
+    
+    if(e.key == "D" || e.key == "d" || e.key == "Right" || e.key == "ArrowRight") {
+        keyDownArr['rightPressed'] = true;
+    }
+    else if(e.key == "a" || e.key == "A" || e.key == "Left" || e.key == "ArrowLeft") {
+        keyDownArr['leftPressed'] = true;
+    }
+    else if(e.key == "W" || e.key == "w" || e.key == "Up" || e.key == "ArrowUp") {
+        keyDownArr['upPressed'] = true;
+    }
+    else if(e.key == "s" || e.key == "S" || e.key == "Down" || e.key == "ArrowDown") {
+        keyDownArr['downPressed'] = true;
+    }
+    
+}
+
+function keyUpHandler(e) {
+    if(e.key == "D" || e.key == "d" || e.key == "Right" || e.key == "ArrowRight") {
+        keyDownArr['rightPressed'] = false;
+    }
+    else if(e.key == "a" || e.key == "A" || e.key == "Left" || e.key == "ArrowLeft") {
+        keyDownArr['leftPressed'] = false;
+    }
+    else if(e.key == "W" || e.key == "w" || e.key == "Up" || e.key == "ArrowUp") {
+        keyDownArr['upPressed'] = false;
+    }
+    else if(e.key == "s" || e.key == "S" || e.key == "Down" || e.key == "ArrowDown") {
+        keyDownArr['downPressed'] = false;
+    }
+}          
+
+function drawBorder() {
+    ctx.beginPath();
+    ctx.moveTo(0-canvasPositionX, 0-canvasPositionY);
+    ctx.lineTo(0-canvasPositionX, mapSize - canvasPositionY);
+    
+    ctx.moveTo(0-canvasPositionX, 0 - canvasPositionY);
+    ctx.lineTo(0-canvasPositionX + mapSize, 0 - canvasPositionY);
+    
+    ctx.moveTo(0-canvasPositionX + mapSize, 0 - canvasPositionY + mapSize);
+    ctx.lineTo(0-canvasPositionX + mapSize, 0 - canvasPositionY);
+    
+    ctx.moveTo(0-canvasPositionX, mapSize - canvasPositionY);
+    ctx.lineTo(0-canvasPositionX + mapSize, 0 - canvasPositionY + mapSize);
+    
+    ctx.lineWidth = 8;
+    ctx.stroke();
+}
+     
+function drawMap() {
+    var imgDifference = 0;
+    for (var objMap in map) {
+        if (map[objMap].obj == 'tree') {
+            imgDraw = imgTree;
+            imgDifference=25;
+            
+        } else if (map[objMap].obj == 'stone') {
+            imgDraw = imgStone;  
+            imgDifference=38;
+        }  else if (map[objMap].obj == 'bush') {
+            imgDraw = imgBush;  
+            imgDifference=25;
+        }
+        ctx.drawImage(imgDraw,map[objMap].x - imgDifference - canvasPositionX, map[objMap].y - imgDifference - canvasPositionY);
+    }
+}
+                    
+function drawFon() {
+    ctx.drawImage(imgFon, 0 - canvasPositionX, 0 - canvasPositionY);
+}
+
+document.querySelector('#myCanvas').addEventListener('click', function(e) {
+    mouseX = (e.pageX - e.target.offsetLeft);
+    mouseY = (e.pageY - e.target.offsetTop);
+    if (!eraser) {
+        if($('#objSelect').val() == 'stone') {
+            map.push({obj:'stone',x:mouseX + canvasPositionX,y:mouseY+canvasPositionY,rad:38,coll:'circle'});
+        } else if ($('#objSelect').val() == 'tree') {
+            map.push({obj:'tree',x:mouseX + canvasPositionX,y:mouseY+canvasPositionY,endX:mouseX + canvasPositionX+50,endY:mouseY+canvasPositionY+50,coll:'box'});
+        }
+         else if ($('#objSelect').val() == 'bush') {
+            map.push({obj:'bush',x:mouseX + canvasPositionX,y:mouseY+canvasPositionY,coll:'none'});
+        }
+    } else {
+        for(var objectMap in map) {
+            if (map[objectMap].x > mouseX + canvasPositionX - eraserSize && map[objectMap].x < mouseX + canvasPositionX + eraserSize && map[objectMap].y > mouseY + canvasPositionY - eraserSize && map[objectMap].y < mouseY + canvasPositionY + eraserSize) {
+                map.splice(objectMap,1);
+            }
+        }
+    }
+}, false);
+                                      
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (keyDownArr['rightPressed']) {
+        canvasPositionX+=7;
+    }
+    if (keyDownArr['leftPressed']) {
+        canvasPositionX+=-7;
+    }
+    if (keyDownArr['upPressed']) {
+        canvasPositionY+=-7;
+    }
+    if (keyDownArr['downPressed']) {
+        canvasPositionY+=7;
+    }
+
+    drawFon();
+    drawMap();
+    drawBorder();
+
+    setTimeout(draw, 20);
+}
+
+function eraserFunct() {
+    
+    if (eraser == false) {
+        eraser = true;
+        $('#eraserButton').css('background-color','#2c2c54');
+    } else {
+        eraser = false
+        $('#eraserButton').css('background-color','#444');
+    }
+}
+    
+function load() {
+    map = JSON.parse($('#inputLoad').val());
+}
+    
+function randomInteger(min, max) {
+    var rand = min + Math.random() * (max + 1 - min);
+    rand = Math.floor(rand);
+    return rand;
+}
+    
+//Функция для генерации карты, запускается из консоли
+function generationMap() {
+    for (i=0;i<30;i++) {
+        rx = randomInteger(0,mapSize);
+        ry = randomInteger(0,mapSize);
+        map.push({obj:'stone',x:rx,y:ry,rad:38,coll:'circle'});
+    }
+    
+    for (i=0;i<30;i++) {
+        rx = randomInteger(0,mapSize);
+        ry = randomInteger(0,mapSize);
+        map.push({obj:'bush',x:rx,y:ry,coll:'none'});
+    }
+    
+    for (i=0;i<30;i++) {
+        rx = randomInteger(0,mapSize);
+        ry = randomInteger(0,mapSize);
+        map.push({obj:'tree',x:rx,y:ry,endX:rx+50,endY:ry+50,coll:'box'});
+    }
+    
+    
+}
+               
+setTimeout(draw, 20);
+
+</script>
+    </body>
+</html>
